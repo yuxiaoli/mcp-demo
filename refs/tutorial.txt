@@ -1,0 +1,951 @@
+https://realpython.com/python-mcp-client/
+
+Build a Python MCP Client to Test Servers From Your Terminal
+Build a Python MCP Client to Test Servers From Your Terminal
+by Leodanis Pozo Ramos Publication date Nov 19, 2025 Reading time estimate 31m 1 Comment
+ intermediate ai projects
+Table of Contents
+
+Prerequisites
+Step 1: Set Up the Project and the Environment
+Step 2: Write a Minimal MCP Client With the Python SDK
+Step 3: Discover Server Tools, Prompts, and Resources
+Build the MCP Client’s CLI With argparse
+Add the --members Command-Line Option
+Update the Client’s Entry-Point Script
+Step 4: Add an AI-Powered Chat
+Add the --chat Command-Line Option
+Create a Chat Handler With OpenAI’s Python SDK
+Connect the Chat With the MCP Client
+Update the Client’s Entry-Point Script
+Make the MCP Client App Installable
+Conclusion
+Next Steps
+Frequently Asked Questions
+
+Remove ads
+Building an MCP client in Python can be a good option when you’re coding MCP servers and want a quick way to test them. In this step-by-step project, you’ll build a minimal MCP client for the command line. It’ll be able to connect to an MCP server through the standard input/output (stdio) transport, list the server’s capabilities, and use the server’s tools to feed an AI-powered chat.
+
+By the end of this tutorial, you’ll understand that:
+
+You can build an MCP client app for the command line using the MCP Python SDK and argparse.
+You can list a server’s capabilities by calling .list_tools(), .list_prompts(), and .list_resources() on a ClientSession instance.
+You can use the OpenAI Python SDK to integrate MCP tool responses into an AI-powered chat session.
+Next, you’ll move through setup, client implementation, capability discovery, chat handling, and packaging to test MCP servers from your terminal.
+
+Prerequisites
+To get the most out of this coding project, you should have some previous knowledge of how to manage a Python project with uv. You should also know the basics of working with the asyncio and argparse libraries from the standard library.
+
+To satisfy these knowledge requirements, you can take a look at the following resources:
+
+Managing Python Projects With uv: An All-in-One Solution
+Python’s asyncio: A Hands-On Walkthrough
+Build Command-Line Interfaces With Python’s argparse
+Familiarity with OpenAI’s Python API, openai, will also be helpful because you’ll use this library to power the chat functionality of your MCP client. You’ll also use the Model Context Protocol (MCP) Python SDK.
+
+Don’t worry if you don’t have all of the prerequisite knowledge before starting this tutorial—that’s completely okay! You’ll learn through the process of getting your hands dirty as you build the project. If you get stuck, then take some time to review the resources linked above. Then, get back to the code.
+
+You’ll also need an MCP server to try your client as you build it. Don’t worry if you don’t have one available—you can use the server provided in step 2.
+
+In this tutorial, you won’t get into the details of creating MCP servers. To learn more about this topic, check out the Python MCP Server: Connect LLMs to Your Data tutorial. Finally, you can download the project’s source code and related files by clicking the link below.
+
+Get Your Code: Click here to download the free sample code you’ll use to build a Python MCP client to test servers from your terminal.
+
+ Take the Quiz: Test your knowledge with our interactive “Build a Python MCP Client to Test Servers From Your Terminal” quiz. You’ll receive a score upon completion to help you track your learning progress:
+
+Build a Python MCP Client to Test Servers From Your Terminal
+Interactive Quiz
+
+Build a Python MCP Client to Test Servers From Your Terminal
+Learn how to create a Python MCP client, start an AI-powered chat session, and run it from the command line. Check your understanding.
+
+
+Remove ads
+Step 1: Set Up the Project and the Environment
+To manage your MCP client project, you’ll use uv, a command-line tool for Python project management. If you don’t have this tool on your current system, then it’s worth checking out the Managing Python Projects With uv: An All-in-One Solution tutorial.
+
+Note: If you prefer not to use uv, then you can use a combination of alternative tools such as pyenv, venv, pip, or poetry.
+
+Once you have uv or another tool set up, go ahead and open a terminal window. Then, move to a directory where you typically store your projects. From there, run the following commands to scaffold and initialize a new mcp-client/ project:
+
+$ uv init mcp-client
+$ cd mcp-client/
+$ uv add mcp openai
+The first command creates a new Python project in an mcp-client/ directory. The resulting directory will have the following structure:
+
+mcp-client/
+├── .git/
+├── .gitignore
+├── .python-version
+├── README.md
+├── main.py
+└── pyproject.toml
+First, you have the .git/ directory and the .gitignore file, which will help you version-control the project.
+
+The .python-version file contains the default Python version for the current project. This file tells uv which Python version to use when creating a dedicated virtual environment for the project. This file will contain the version number of the Python interpreter you’re currently using.
+
+Next, you have an empty README.md file that you can use to provide basic documentation for your project. The main.py file provides a Python script that you can optionally use as the project’s entry point. You won’t use this file in this tutorial, so feel free to remove it.
+
+Finally, you have the pyproject.toml file, which you’ll use to prepare your project for building and distribution.
+
+The uv add command allows you to install external dependencies. In this project, you’ll need mcp and openai, which are available in the Python Package Index (PyPI). When you run this command, uv automatically creates a virtual environment for the project.
+
+Note: By the end of this tutorial, your project’s folder will have the following structure:
+
+mcp-client/
+├── .git/
+├── .venv/
+├── mcp_client/
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── chat.py
+│   ├── cli.py
+│   ├── handlers.py
+│   └── mcp_client.py
+├── mcp_server/
+│   └── mcp_server.py
+├── .gitignore
+├── .python-version
+├── README.md
+├── pyproject.toml
+└── uv.lock
+You can create the missing subfolders and files now if you like, or you can defer this task until you need them. For now, note the subtle difference between the project root folder, mcp-client/, and the client package folder, mcp_client/.
+
+Now, you can launch your favorite code editor or IDE in the project’s root directory, and you’re ready to start coding!
+
+Step 2: Write a Minimal MCP Client With the Python SDK
+Before you start coding your MCP client, you need to set up the test server. If you don’t have one, then go ahead and create an mcp_server/ subdirectory in the project’s root folder. Then, create the mcp_server.py script with the code below:
+
+mcp-client/mcp_server/mcp_server.py
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("mcp_server")
+
+@mcp.tool()
+async def echo(message: str) -> str:
+    """Echo back the message."""
+    return message
+
+@mcp.prompt()
+async def greeting_prompt(name: str) -> str:
+    """A simple greeting prompt."""
+    return f"Greet {name} kindly."
+
+@mcp.resource("file://./greeting.txt")
+def greeting_file() -> str:
+    """The greeting text file."""
+    with open("greeting.txt", "r", encoding="utf-8") as file:
+        return file.read()
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")
+Now you’re all set up to create a minimal MCP client that can connect to this server and others. Go ahead and create an mcp_client/ subdirectory in the project’s root. This directory will be a Python package, so you need to create the corresponding __init__.py file. You also need to create the mcp_client.py file with this initial content:
+
+mcp-client/mcp_client/mcp_client.py
+import sys
+from contextlib import AsyncExitStack
+from typing import Any, Awaitable, Callable, ClassVar, Self
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+class MCPClient:
+    """MCP client to interact with MCP server.
+
+    Usage:
+        async with MCPClient(server_path) as client:
+            # Call client methods here...
+    """
+
+    client_session: ClassVar[ClientSession]
+
+    def __init__(self, server_path: str):
+        self.server_path = server_path
+        self.exit_stack = AsyncExitStack()
+In this code, you start by importing the required modules and objects. Next, you define the MCPClient class to manage communication with the target MCP server. You’ll handle this communication through .client_session, which is a class attribute that holds an instance of mcp.ClientSession.
+
+Note: MCP supports two transport mechanisms:
+
+Stdio transport: Uses standard input/output streams for direct communication between local processes on the same machine.
+Streamable HTTP transport: Uses HTTP POST requests for client-to-server messages, enabling communication with remote servers.
+In this tutorial, you’ll use the stdio transport mechanism to connect the MCP client to a test server. As a further exercise, you can explore the HTTP transport for remote communication.
+
+The .__init__() method initializes the server’s executable path and creates an AsyncExitStack instance. AsyncExitStack is a context manager from Python’s contextlib module that allows you to programmatically manage multiple asynchronous context managers. You need this class to manage the stdio client and its session.
+
+You’ll use the MCPClient class as an asynchronous context manager, so you need to implement the .__aenter__() and .__aexit__() special methods:
+
+mcp-client/mcp_client/mcp_client.py
+class MCPClient:
+    # ...
+
+    async def __aenter__(self) -> Self:
+        cls = type(self)
+        cls.client_session = await self._connect_to_server()
+        return self
+
+    async def __aexit__(self, *_) -> None:
+        await self.exit_stack.aclose()
+The .__aenter__() method runs when the async with statement enters the target context. This is a good time to create the client session, which you do by calling the ._connect_to_server() helper method. You’ll implement this method in a moment.
+
+Because .client_session is a class attribute, you use the class object (cls) to assign it a value. Note that using self (argument) instead of cls (argument) will create a new instance attribute, rather than referring to the class attribute.
+
+The .client_session attribute allows you to create and manage a client session over standard input/output (I/O) using the stdio_client() function.
+
+The .__aexit__() method is called automatically when the async with statement exits. This is the right moment to close the client session: call .aclose() on the AsyncExitStack and await it asynchronously to release the resources cleanly.
+
+Now it’s time to implement ._connect_to_server() to perform the actual job. The method will be asynchronous and return a ClientSession instance:
+
+mcp-client/mcp_client/mcp_client.py
+class MCPClient:
+    # ...
+
+    async def _connect_to_server(self) -> ClientSession:
+        try:
+            read, write = await self.exit_stack.enter_async_context(
+                stdio_client(
+                    server=StdioServerParameters(
+                        command="sh",
+                        args=[
+                            "-c",
+                            f"{sys.executable} {self.server_path} 2>/dev/null",
+                        ],
+                        env=None,
+                    )
+                )
+            )
+            client_session = await self.exit_stack.enter_async_context(
+                ClientSession(read, write)
+            )
+            await client_session.initialize()
+            return client_session
+        except Exception:
+            raise RuntimeError("Error: Failed to connect to server")
+In the ._connect_to_server() method, you establish a connection between MCPClient and an MCP server process.
+
+Inside the try block, you use the .exit_stack object to enter an asynchronous context and access the read and write streams of your client’s standard I/O.
+
+The client takes a server whose parameters are the shell (sh) command with the -c option to execute a string as a command. You build the target string using the Python executable, sys.executable, and the self.server_path attribute. The 2>/dev/null bit redirects any error output so the terminal window doesn’t get cluttered.
+
+Then, you pass the read and write communication channels to the ClientSession class, which manages the communication session. Finally, you initialize the session and return it to the caller.
+
+The AsyncExitStack instance enables you to maintain the stdio client and its session in context throughout the app’s execution. You only exit both contexts when you call .exit_stack.aclose() in the .__aexit__() method.
+
+If any step fails, you raise a RuntimeError to indicate that the connection attempt was unsuccessful. Note that catching the broad Exception class isn’t a best practice in Python. However, in this example, you use this exception for the sake of simplicity and convenience.
+
+Now it’s time to give this code a first try. Return to your code editor and create the following __main__.py file inside the mcp_client package:
+
+mcp-client/mcp_client/__main__.py
+import asyncio
+
+from mcp_client.mcp_client import MCPClient
+
+async def main():
+    async with MCPClient("./mcp_server/mcp_server.py"):
+        print("Connected to the MCP server!")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+This file will eventually become the client’s entry-point script. For now, it only provides some boilerplate code that allows you to test the client’s current functionality. Note that you’ve also hard-coded the server path to simplify the code. You’ll fix this in the next section.
+
+Note: At this point in the development process, your project’s directory structure should look something like this:
+
+mcp-client/
+├── .git/
+├── .venv/
+├── mcp_client/
+│   ├── __init__.py
+│   ├── __main__.py
+│   └── mcp_client.py
+├── mcp_server/
+│   └── mcp_server.py
+├── .gitignore
+├── .python-version
+├── README.md
+├── pyproject.toml
+└── uv.lock
+Go ahead and run the following command in your terminal:
+
+$ uv run python -m mcp_client
+Connected to the MCP server!
+Your MCP client successfully connects to the target server. That’s a great accomplishment! In the next section, you’ll add a command-line interface (CLI) to your client and some more useful functionality.
+
+
+Remove ads
+Step 3: Discover Server Tools, Prompts, and Resources
+To add a CLI to your MCP client, you’ll use the argparse module. This module is part of the Python standard library and provides a quick way to create user-friendly CLIs with arguments, options, subcommands, and more.
+
+In this initial stage, the CLI will take the path to the MCP server script as an argument. It’ll also have a --members option to list the server’s tools, prompts, and resources. Each of these displays a short description if available.
+
+Build the MCP Client’s CLI With argparse
+Get back to your code editor and create a new file called cli.py inside the mcp_client package. Then, add the following content to the file:
+
+mcp-client/mcp_client/cli.py
+import argparse
+import pathlib
+
+def parse_args():
+    """Parse command line arguments and return parsed args."""
+    parser = argparse.ArgumentParser(description="A minimal MCP client")
+    parser.add_argument(
+        "server_path",
+        type=pathlib.Path,
+        help="path to the MCP server script",
+    )
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--members",
+        action="store_true",
+        help="list the MCP server's tools, prompts, and resources",
+    )
+    return parser.parse_args()
+In this file, you create a command-line argument parser using the ArgumentParser class. Then, you add an argument to specify the path to the MCP server’s script. You set the argument’s type to pathlib.Path so that the CLI converts the user-provided path string into a Path object, enhancing the app’s path management. The help argument allows you to provide descriptive help messages for the client users.
+
+You also create a group of mutually exclusive command-line options. You need this because you don’t want the --members option to run with the --chat option that you’ll implement later. Next, you add the --members option as a stored Boolean value with an appropriate help message. That’s it! The CLI is ready for now.
+
+Note: At this point, your project’s root directory should look something like this:
+
+mcp-client/
+├── .git/
+├── .venv/
+├── mcp_client/
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── cli.py
+│   └── mcp_client.py
+├── mcp_server/
+│   └── mcp_server.py
+├── .gitignore
+├── .python-version
+├── README.md
+├── pyproject.toml
+└── uv.lock
+In the next section, you’ll write the code that’ll make the --members option list the MCP server’s tools, prompts, and resources.
+
+Add the --members Command-Line Option
+The --members command-line option will provide a complete list of the target MCP server’s members or primitives. You’ll start with the list_all_members() function, which will be part of the public interface of MCPClient:
+
+mcp-client/mcp_client/mcp_client.py
+class MCPClient:
+    # ...
+
+    async def list_all_members(self) -> None:
+        """List all available tools, prompts, and resources."""
+        print("MCP Server Members")
+        print("=" * 50)
+
+        sections = {
+            "tools": self.client_session.list_tools,
+            "prompts": self.client_session.list_prompts,
+            "resources": self.client_session.list_resources,
+        }
+        for section, listing_method in sections.items():
+            await self._list_section(section, listing_method)
+
+        print("\n" + "=" * 50)
+In this function, you print a heading for the list of members. Then, you create a dictionary that maps the sections to the corresponding listing method in the client session. Next, you loop over the dictionary items to call ._list_section() with the corresponding section name and method. This retrieves the data from the MCP server.
+
+Here’s the implementation of your ._list_section() helper method. Because it’s a non-public method, it isn’t part of the class’s public interface:
+
+mcp-client/mcp_client/mcp_client.py
+class MCPClient:
+    # ...
+
+    async def _list_section(
+        self,
+        section: str,
+        list_method: Callable[[], Awaitable[Any]],
+    ) -> None:
+        try:
+            items = getattr(await list_method(), section)
+            if items:
+                print(f"\n{section.upper()} ({len(items)}):")
+                print("-" * 30)
+                for item in items:
+                    description = item.description or "No description"
+                    print(f" > {item.name} - {description}")
+            else:
+                print(f"\n{section.upper()}: None available")
+        except Exception as e:
+            print(f"\n{section.upper()}: Error - {e}")
+In the ._list_section() method, you take a section name, such as "tools", "prompts", or "resources", and a ClientSession.list_* method object as arguments. Then, you dynamically call the method using getattr() and retrieve the members or items in the section. Finally, you print the section title, the number of items, and the details for each one, including its name and description.
+
+If no items are found, you print a message indicating that the section is empty. The method also includes error handling to catch and display any exceptions that occur during the process, ensuring that failures don’t crash the program but instead produce a clear error message for the user.
+
+Update the Client’s Entry-Point Script
+To make everything work, you need to fully update your __main__.py file with the following changes:
+
+mcp-client/mcp_client/__main__.py
+import asyncio
+
+from mcp_client.cli import parse_args
+from mcp_client.mcp_client import MCPClient
+
+async def main() -> None:
+    """Run the MCP client with the specified options."""
+    args = parse_args()
+    if not args.server_path.exists():
+        print(f"Error: Server script '{args.server_path}' not found")
+        return
+
+    try:
+        async with MCPClient(str(args.server_path)) as client:
+            if args.members:
+                await client.list_all_members()
+    except RuntimeError as e:
+        print(e)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+In this update to the main() function, you grab the command-line arguments by calling parse_args() from the cli.py module. The conditional checks whether the path to the MCP server script exists. If not, then you print an error message and return, which eventually causes the application to terminate.
+
+Next, you have a try block where you create an MCPClient instance in an async with statement. The conditional inside the with code block checks whether the user provided the --members option at the command line. If that’s the case, then you await the call to .list_all_members(). If an error occurs, you print the error message to the screen.
+
+To try out your MCP client, make sure you’re in the project’s root folder and then run the following command:
+
+$ uv run python -m mcp_client mcp_server/mcp_server.py --members
+MCP Server Members
+==================================================
+
+TOOLS (1):
+------------------------------
+ > echo - Echo back the message.
+
+PROMPTS (1):
+------------------------------
+ > greeting_prompt - A simple greeting prompt.
+
+RESOURCES (1):
+------------------------------
+ > greeting_file - The greeting text file.
+
+==================================================
+The output looks great! It lists the three sections along with their respective items. This allows you to assess the target server’s capabilities and gain a better understanding of how to use it effectively.
+
+
+Remove ads
+Step 4: Add an AI-Powered Chat
+In this section, you’ll add chat capabilities to your MCP client. To do this, you’ll start by adding a --chat option to the app’s CLI. Then, you’ll write an AI-powered chat handler using OpenAI’s Python SDK. Finally, you’ll set up the client for installation in your current Python environment.
+
+To kick things off, you’ll add the --chat command-line option to the app’s CLI.
+
+Add the --chat Command-Line Option
+Go back to the cli.py file and add the following code to it:
+
+mcp-client/mcp_client/cli.py
+import argparse
+import pathlib
+
+def parse_args():
+    """Parse command line arguments and return parsed args."""
+    parser = argparse.ArgumentParser(description="A minimal MCP client")
+    parser.add_argument(
+        "server_path",
+        type=pathlib.Path,
+        help="path to the MCP server script",
+    )
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--members",
+        action="store_true",
+        help="list the MCP server's tools, prompts, and resources",
+    )
+    group.add_argument(
+        "--chat",
+        action="store_true",
+        help="start an AI-powered chat with MCP server integration",
+    )
+    return parser.parse_args()
+The --chat option will trigger a minimal chat interface on the command line. Next, you’ll set up the chat interface where you’ll be able to enter your queries and receive the AI-powered backend’s response.
+
+To write the chat interface, go ahead and create a new file called chat.py under the mcp_client package. Then, add the following code to it:
+
+mcp-client/mcp_client/chat.py
+async def run_chat(handler) -> None:
+    """Run an AI-handled chat session."""
+    print("\nMCP Client's Chat Started!")
+    print("Type your queries or 'quit' to exit.")
+
+    while True:
+        try:
+            if not (query := input("\nYou: ").strip()):
+                continue
+            if query.lower() == "quit":
+                break
+
+            print("\n" + await handler.process_query(query))
+        except Exception as e:
+            print(f"\nError: {str(e)}")
+
+    print("\nGoodbye!")
+This is quite a short function. It takes an AI-powered handler as an argument, prints an informative message, and starts the chat loop.
+
+The while loop is an intentional infinite loop that terminates only when the user enters quit at the command line.
+
+In the loop, you grab the user query using the built-in input() function, which you store in the query variable. Next, you use this query as an argument to handler.process_query(), which will pass the query to an OpenAI model for further processing. If an error occurs, then you print the corresponding error message.
+
+Create a Chat Handler With OpenAI’s Python SDK
+Interacting with an MCP server requires an AI-powered client. Up to this point, your MCP client doesn’t have AI-powered capabilities. In this section, you’ll implement that. You’ll use OpenAI’s Python SDK, which you already installed in your working environment.
+
+Go back to your code editor and create a new file called handlers.py under the mcp_client package. Then, start with the following code:
+
+mcp-client/mcp_client/handlers.py
+import json
+import os
+
+from mcp import ClientSession
+from openai import OpenAI
+
+MODEL = "gpt-4o-mini"
+MAX_TOKENS = 1000
+
+class OpenAIQueryHandler:
+    """Handle OpenAI API interaction and MCP tool execution."""
+
+    def __init__(self, client_session: ClientSession):
+        self.client_session = client_session
+        if not (api_key := os.getenv("OPENAI_API_KEY")):
+            raise RuntimeError(
+                "Error: OPENAI_API_KEY environment variable not set",
+            )
+        self.openai = OpenAI(api_key=api_key)
+After the required imports, you define two constants, MODEL and MAX_TOKENS, which hold the model you’ll use and the maximum number of allowed tokens, as their names suggest.
+
+Next, you define the OpenAIQueryHandler class. The initializer takes a ClientSession as an argument and defines the .client_session and .openai attributes. It also verifies whether an OpenAI API key is set up in your environment.
+
+The heart of the handler is the .process_query() method, which accepts a user query as a string and performs the following actions:
+
+Forwarding the query to OpenAI along with the list of available tools on the MCP server
+Inspecting the model’s response to determine whether tool calls are needed
+Triggering any required tool calls
+Requesting a final answer from the model that integrates any tool outputs
+Here’s the implementation of your process_query() method:
+
+mcp-client/mcp_client/handlers.py
+class OpenAIQueryHandler:
+    # ...
+
+    async def process_query(self, query: str) -> str:
+        """Process a query using OpenAI and available MCP tools."""
+        # Get initial model's response and decision on tool calls
+        messages = [{"role": "user", "content": query}]
+        initial_response = self.openai.chat.completions.create(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            messages=messages,
+            tools=await self._get_tools(),
+        )
+
+        current_message = initial_response.choices[0].message
+        result_parts = []
+
+        if current_message.content:
+            result_parts.append(current_message.content)
+
+        # Handle tool usage if present
+        if tool_calls := current_message.tool_calls:
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": current_message.content or "",
+                    "tool_calls": tool_calls,
+                }
+            )
+
+            # Execute tools
+            for tool_call in tool_calls:
+                tool_result = await self._execute_tool(tool_call)
+                result_parts.append(tool_result["log"])
+                messages.append(tool_result["message"])
+
+            # Get final model's response after tool execution
+            final_response = self.openai.chat.completions.create(
+                model=MODEL,
+                max_tokens=MAX_TOKENS,
+                messages=messages,
+            )
+
+            if content := final_response.choices[0].message.content:
+                result_parts.append(content)
+
+        return "Assistant: " + "\n".join(result_parts)
+First, you construct an initial conversation with the OpenAI model using the user’s query. You invoke .create(), passing in the model, token limits, messages, and the result of calling ._get_tools(), which packages the MCP tools into a schema that OpenAI can process.
+
+Note: The model you use for this project must support tool calling or function calling. If you use a model or version of OpenAI’s API that doesn’t support the tools argument, your code will fail.
+
+The model returns a message object that may include direct content and optionally instructions to call one or more tools on the MCP server.
+
+If the model produces content, then you append it to a list of result parts. Then, you check whether the response requires any tool calls. If so, you append the assistant message with the tool-call metadata to the conversation. Next, you loop through the tools and delegate execution to ._execute_tool().
+
+After executing all tool calls, you make a second call to the model to request a final answer that incorporates the tool outputs. To wrap up the process, you append the final content and return a formatted answer that combines all parts. This will be the AI assistant’s response in the chat interface.
+
+The ._get_tools() helper is fairly straightforward. Here’s its code:
+
+mcp-client/mcp_client/handlers.py
+class OpenAIQueryHandler:
+    # ...
+
+    async def _get_tools(self) -> list:
+        """Get MCP tools formatted for OpenAI."""
+        response = await self.client_session.list_tools()
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description or "No description",
+                    "parameters": getattr(
+                        tool,
+                        "inputSchema",
+                        {"type": "object", "properties": {}},
+                    ),
+                },
+            }
+            for tool in response.tools
+        ]
+In this method, you get the MCP server’s tools by calling .list_tools(). Then, you transform each tool into an OpenAI-ready JSON schema format that describes the function to call. Each tool contains a name, description, and input schema.
+
+This information is crucial because it enables OpenAI models to determine whether to invoke any tools to generate the final response that integrates the resulting data.
+
+Finally, you need the ._execute_tool() helper method. Here’s its implementation:
+
+mcp-client/mcp_client/handlers.py
+class OpenAIQueryHandler:
+    # ...
+
+    async def _execute_tool(self, tool_call) -> dict:
+        """Execute an MCP tool call and return formatted result."""
+        tool_name = tool_call.function.name
+        tool_args = json.loads(tool_call.function.arguments or "{}")
+
+        try:
+            result = await self.client_session.call_tool(
+                tool_name, tool_args,
+            )
+            content = result.content[0].text if result.content else ""
+            log = f"[Used {tool_name}({tool_args})]"
+        except Exception as e:
+            content = f"Error: {e}"
+            log = f"[{content}]"
+
+        return {
+            "log": log,
+            "message": {
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": content,
+            },
+        }
+In the ._execute_tool() helper, you take a tool_call object from the model’s output and run it through your ClientSession. To do this, you first extract the tool’s name and parse its arguments using the json.loads() function.
+
+Next, you await client_session.call_tool() to execute the current tool on the MCP server side. If the tool returns structured content, then you extract the text of its first item. Otherwise, you set the content to an empty string. You also construct a log string summarizing the invocation to provide user feedback in the chat interface.
+
+If the tool execution fails due to an exception, then you catch the error and create a log accordingly. Finally, you return a dictionary with two keys: "log" containing the summary string, and "message" containing the tool role message for the AI model.
+
+That’s it! You’ve coded the AI-powered handler for your client’s chat interface. It’s time to update the MCPClient class.
+
+
+Remove ads
+Connect the Chat With the MCP Client
+Go back to the mcp_client.py file. First, update the imports to add the chat function and the OpenAIQueryHandler class:
+
+mcp-client/mcp_client/mcp_client.py
+import sys
+from contextlib import AsyncExitStack
+from typing import Any, Awaitable, Callable, ClassVar, Self
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+from mcp_client import chat
+from mcp_client.handlers import OpenAIQueryHandler
+
+# ...
+Once you’ve updated the imports, you can add the .run_chat() method to MCPClient:
+
+mcp-client/mcp_client/mcp_client.py
+# ...
+
+class MCPClient:
+    # ...
+
+    async def run_chat(self) -> None:
+        """Start interactive chat with MCP server using OpenAI."""
+        try:
+            handler = OpenAIQueryHandler(self.client_session)
+            await chat.run_chat(handler)
+        except RuntimeError as e:
+            print(e)
+In the .run_chat() method, you create the AI handler for the chat session and then call the .run_chat() function to start the chat interface. If an error occurs, then you print an appropriate error message to inform the user.
+
+With these updates in place, you can now update the app’s entry-point script so that you can use the new chat functionality from the command line.
+
+Update the Client’s Entry-Point Script
+To integrate the --chat option into your client’s behavior, you just need to make a minimal change to the __main__.py file. Consider the highlighted lines below:
+
+mcp-client/mcp_client/__main__.py
+import asyncio
+
+from mcp_client.cli import parse_args
+from mcp_client.mcp_client import MCPClient
+
+async def main() -> None:
+    """Run the MCP client with the specified options."""
+    args = parse_args()
+    if not args.server_path.exists():
+        print(f"Error: Server script '{args.server_path}' not found")
+        return
+
+    try:
+        async with MCPClient(str(args.server_path)) as client:
+            if args.members:
+                await client.list_all_members()
+            elif args.chat:
+                await client.run_chat()
+    except RuntimeError as e:
+        print(e)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+In this update, you just add an elif branch to the conditional. This branch checks whether the user provided the --chat command-line option. If that’s the case, then you call .run_chat() on the client object.
+
+Now you’re all set up to give the chat interface a try. Go ahead, run the following command, and then enter a request for the assistant:
+
+$ uv run python -m mcp_client mcp_server/mcp_server.py --chat
+
+MCP Client's Chat Started!
+Type your queries or 'quit' to exit.
+
+You: echo My first MCP client!
+
+Assistant: [Used echo({'message': 'My first MCP client!'})]
+My first MCP client!
+
+You:
+That looks great! The chat interface works and lets you query the model and receive a response. Notice how the model incorporates the tool-call result into its reply. This confirms that the target MCP server was used correctly. To exit the chat interface, type quit and press Enter.
+
+Make the MCP Client App Installable
+In this final section, you’ll edit the pyproject.toml file so you can use uv to build and install your MCP client locally with an editable install.
+
+At this point, your project should have the following directory structure:
+
+mcp-client/
+├── .git/                    # Git version control
+├── .venv/                   # Python virtual environment
+├── mcp_client/              # MCP client
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── chat.py
+│   ├── cli.py
+│   ├── handlers.py
+│   └── mcp_client.py
+├── mcp_server/              # Test MCP server
+│   └── mcp_server.py
+├── .gitignore
+├── .python-version
+├── README.md
+├── pyproject.toml
+└── uv.lock
+Go ahead and open pyproject.toml in your code editor. Then, update it as shown below:
+
+mcp-client/pyproject.toml
+[project]
+name = "mcp-client"
+version = "0.1.0"
+description = "MCP client for testing MCP servers."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "mcp>=1.20.0",
+    "openai>=2.6.1",
+]
+
+[project.scripts]
+mcp-client = "mcp_client.__main__:cli_main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["mcp_client*"]  # Only include mcp_client package
+exclude = ["mcp_server*"]  # Explicitly exclude mcp_server
+First, you update the project description. Next, you set up the entry-point script in the [project.scripts] table. Note that you’ve set this key to mcp_client.__main__:cli_main, but this function isn’t defined in the __main__.py file yet. Add the function just below main(). Here’s the code:
+
+mcp-client/mcp_client/__main__.py
+# ...
+
+def cli_main():
+    """Entry point for the mcp-client CLI app."""
+    asyncio.run(main())
+
+# ...
+You need this function because the setuptools build system can’t handle async functions like main(). It only supports synchronous callables. A possible solution is to wrap the async main() in a synchronous function, such as cli_main() in this example.
+
+You’ll use setuptools as the build system, which is configured in the [build-system] table.
+
+Because this project includes a test MCP server in a top-level folder, you must instruct the build system to exclude this folder from the build. That’s what you do in the [tool.setuptools.packages.find] table.
+
+To try this setup out, go ahead and run the following in your terminal:
+
+$ uv sync
+Resolved 33 packages in 353ms
+      Built mcp-client @ file:///Users/realpython/mcp-client
+Prepared 1 package in 551ms
+Installed 1 package in 1ms
+ + mcp-client==0.1.0 (from file:///Users/realpython/mcp-client)
+When you run this command, uv sets up everything for you using the updated pyproject.toml file. From now on, you can run your MCP client using the mcp-client command directly once you activate the project’s virtual environment:
+
+$ source .venv/bin/activate
+(mcp-client) $ mcp-client --help
+usage: mcp-client [-h] (--members | --chat) server_path
+
+A minimal MCP client
+
+positional arguments:
+  server_path           path to the MCP server script
+
+options:
+  -h, --help            show this help message and exit
+  --members             list the MCP server's tools, prompts, and resources
+  --chat                start an AI-powered chat with MCP server integration
+As you can see, the mcp-client command now works when used directly in the project’s virtual environment.
+
+That’s it! You’ve built a command-line interface MCP client using the Python SDK for MCP and OpenAI. You can use this client to test your MCP servers during development. However, keep in mind that this is a minimal client that doesn’t cover production concerns such as security, concurrency, error handling, tool permissions, and others.
+
+
+Remove ads
+Conclusion
+You’ve learned how to build a basic command-line Model Context Protocol (MCP) client in Python, which allows you to connect to MCP servers, discover their capabilities, and interact with them through an AI-powered chat interface.
+
+You started by setting up your project environment and implementing a robust client class using asynchronous context management and the MCP Python SDK. Next, you added a user-friendly command-line interface with argparse for seamless capability discovery and interactive chat sessions powered by OpenAI’s API. Finally, you packaged your project for installation.
+
+Integrating AI and external tools is a valuable skill for any Python developer working with modern AI workflows that use MCP.
+
+In this tutorial, you’ve learned how to:
+
+Set up and structure a Python project using uv and pyproject.toml
+Implement an asynchronous MCP client with the MCP Python SDK
+Build a robust command-line interface (CLI) using argparse
+List and inspect MCP server capabilities, including tools, prompts, and resources
+Use OpenAI’s Python SDK to enable AI-powered chat with tool invocation
+With these skills, you can now quickly test MCP servers directly from your terminal. You can also extend your client app with additional features as needed. You’re now well-equipped to experiment with advanced AI integrations and to streamline your MCP server development cycle.
+
+Next Steps
+Now that you’ve finished building your MCP client app, you can take the project a step further by adding new functionality. Adding new features will help you continue to learn exciting new coding concepts and techniques.
+
+Here are some ideas to take your project to the next level:
+
+Add HTTP streaming support: Modify the code so the client can also connect to online MCP servers using HTTP POST and GET requests.
+Handle prompts and resources: Add code to support not only tool calling but also MCP prompts and resources.
+Support additional AI models: Enable models from other online and local providers to handle the chat.
+These features will make your client even more powerful and flexible, allowing you to test a wider range of MCP servers. Refer to the MCP documentation for additional client examples.
+
+Get Your Code: Click here to download the free sample code you’ll use to build a Python MCP client to test servers from your terminal.
+
+Frequently Asked Questions
+Now that you have some experience with building an MCP client in Python, you can use the questions and answers below to check your understanding and recap what you’ve learned.
+
+These FAQs are related to the most important concepts you’ve covered in this tutorial. Click the Show/Hide toggle beside each question to reveal the answer.
+
+
+
+
+ Take the Quiz: Test your knowledge with our interactive “Build a Python MCP Client to Test Servers From Your Terminal” quiz. You’ll receive a score upon completion to help you track your learning progress:
+
+Build a Python MCP Client to Test Servers From Your Terminal
+Interactive Quiz
+
+Build a Python MCP Client to Test Servers From Your Terminal
+Learn how to create a Python MCP client, start an AI-powered chat session, and run it from the command line. Check your understanding.
+
+🐍 Python Tricks 💌
+
+Get a short & sweet Python Trick delivered to your inbox every couple of days. No spam ever. Unsubscribe any time. Curated by the Real Python team.
+
+Python Tricks Dictionary Merge
+Email Address
+About Leodanis Pozo Ramos
+
+Leodanis Pozo Ramos
+Leodanis is a self-taught Python developer, educator, and technical writer with over 10 years of experience.
+
+» More about Leodanis
+Each tutorial at Real Python is created by a team of developers so that it meets our high quality standards. The team members who worked on this tutorial are:
+
+Aldren Santos
+Aldren
+
+Brenda Weleschuk
+Brenda
+
+Bartosz Zaczyński
+Bartosz
+
+Martin Breuss
+Martin
+
+Master Real-World Python Skills
+With Unlimited Access to Real Python
+
+Locked learning resources
+
+Join us and get access to thousands of tutorials, hands-on video courses, and a community of expert Pythonistas:
+
+
+What Do You Think?
+
+Rate this article: 
+What’s your #1 takeaway or favorite thing you learned? How are you going to put your newfound skills to use? Leave a comment below and let us know.
+
+Commenting Tips: The most useful comments are those written with the goal of learning from or helping out other students. Get tips for asking good questions and get answers to common questions in our support portal.
+
+Looking for a real-time conversation? Visit the Real Python Community Chat or join the next “Office Hours” Live Q&A Session. Happy Pythoning!
+Keep Learning
+
+Related Topics: intermediate ai projects
+
+Related Tutorials:
+
+Python MCP Server: Connect LLMs to Your Data
+Managing Python Projects With uv: An All-in-One Solution
+How to Properly Indent Python Code
+How to Convert Bytes to Strings in Python
+Quantum Computing Basics With Qiskit
+Learn Python
+Start Here
+Learning Resources
+Code Mentor
+Python Reference
+Python Cheat Sheet
+Support Center
+Courses & Paths
+Learning Paths
+Quizzes & Exercises
+Browse Topics
+Live Courses
+Books
+Community
+Podcast
+Newsletter
+Community Chat
+Office Hours
+Learner Stories
+Membership
+Plans & Pricing
+Team Plans
+For Business
+For Schools
+Reviews
+Company
+About Us
+Team
+Mission & Values
+Editorial Guidelines
+Sponsorships
+Careers
+Press Kit
+Merch
+Privacy Policy ⋅ Terms of Use ⋅ Security ⋅ Contact
+© 2012–2025 DevCademy Media Inc. DBA Real Python. All rights reserved.
+REALPYTHON™ is a trademark of DevCademy Media Inc.
+Real Python - Online Python Training (logo)

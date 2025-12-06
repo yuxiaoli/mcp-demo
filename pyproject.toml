@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "mcp-demo"
+version = "0.1.0"
+description = "MCP demo for testing MCP servers."
+authors = ["Trae User <user@example.com>"]
+readme = "README.md"
+packages = [{include = "mcp_demo", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+mcp = ">=1.20.0"
+openai = ">=2.6.1"
+python-dotenv = "^1.2.1"
+
+[tool.poetry.scripts]
+mcp-demo = "mcp_demo.__main__:cli_main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
